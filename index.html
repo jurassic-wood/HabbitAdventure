@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Dino Quest">
 <meta name="theme-color" content="#1d2b22">
-<link rel="apple-touch-icon" href="assets/dino/level1.png">
+<link rel="apple-touch-icon" href="level1.png">
 <title>Dino Quest</title>
 <style>
   :root{
@@ -133,7 +133,7 @@
   <!-- HEUTE -->
   <section class="view on" id="v-today">
     <div class="card hero" id="hero">
-      <img id="heroImg" src="assets/dino/level1.png" alt="Dino">
+      <img id="heroImg" src="level1.png" alt="Dino">
       <span class="lvl" id="heroLvl">Level 1</span>
       <div class="title" id="heroTitle">Wanderer</div>
       <div class="bar"><div id="heroBar" style="width:0"></div></div>
@@ -320,7 +320,7 @@ function streak(h){ // Tage am Stück ohne Rückfall (für schlechte) bzw. erled
 const $ = id => document.getElementById(id);
 function renderHero(){
   const p = savePoints(), i = levelFor(Math.max(0,p)), L = LEVELS[i], N = LEVELS[i+1];
-  $('heroImg').src = `assets/dino/level${i+1}.png`;
+  $('heroImg').src = `level${i+1}.png`;
   $('heroLvl').textContent = `Level ${i+1}`;
   $('heroTitle').textContent = L.name;
   $('heroBar').style.width = N ? `${Math.min(100, (Math.max(0,p)-L.min)/(N.min-L.min)*100)}%` : '100%';
@@ -419,7 +419,7 @@ function renderSave(){
     const t = today(), totalDays = (parse(S.save.end)-parse(S.save.start))/864e5 + 1;
     const passed = Math.max(0, Math.min(totalDays, (parse(t)-parse(S.save.start))/864e5 + 1));
     $('saveCard').innerHTML = `
-      <div class="row"><img src="assets/dino/level${i+1}.png" style="width:72px;height:72px;object-fit:contain">
+      <div class="row"><img src="level${i+1}.png" style="width:72px;height:72px;object-fit:contain">
         <div><b style="font-size:18px">${esc(S.save.name)}</b>
         <div class="small muted">${fmtShort(S.save.start)} – ${fmtShort(S.save.end)}</div>
         <div class="small">Level ${i+1} · ${LEVELS[i].name} · ${p} Punkte</div></div></div>
@@ -437,9 +437,9 @@ function renderSave(){
     $('saveCard').innerHTML = '<p class="muted" style="margin:0">Kein aktiver Spielstand. Leg unten einen neuen an!</p>';
   }
   $('levels').innerHTML = LEVELS.map((l,k) =>
-    `<div class="${k===i?'cur':''} ${k>i?'locked':''}"><img src="assets/dino/level${k+1}.png" alt="">${k+1}. ${l.name}<br>${l.min} P.</div>`).join('');
+    `<div class="${k===i?'cur':''} ${k>i?'locked':''}"><img src="level${k+1}.png" alt="">${k+1}. ${l.name}<br>${l.min} P.</div>`).join('');
   $('hall').innerHTML = S.hall.length ? S.hall.map(s =>
-    `<div class="edit"><img src="assets/dino/level${s.level}.png" style="width:44px;height:44px;object-fit:contain">
+    `<div class="edit"><img src="level${s.level}.png" style="width:44px;height:44px;object-fit:contain">
       <div style="flex:1"><b>${esc(s.name)}</b><div class="small muted">${fmtShort(s.start)} – ${fmtShort(s.end)}</div></div>
       <div class="small"><b>${s.points}</b> P.</div></div>`).join('')
     : '<p class="muted small" style="margin:0">Hier landen abgeschlossene Spielstände.</p>';
@@ -519,7 +519,7 @@ $('nextDay').onclick = () => { if(curDay < today()){ curDay = addDays(curDay,1);
 $('rangeSeg').onclick = e => { const w = e.target.dataset.w; if(!w) return; heatWeeks = +w;
   [...$('rangeSeg').children].forEach(b => b.classList.toggle('on', b===e.target)); renderHeat(); };
 function showLevelUp(i){
-  $('luImg').src = `assets/dino/level${i+1}.png`; $('luTitle').textContent = `Level ${i+1} · ${LEVELS[i].name}`;
+  $('luImg').src = `level${i+1}.png`; $('luTitle').textContent = `Level ${i+1} · ${LEVELS[i].name}`;
   $('levelup').classList.add('on');
 }
 $('levelup').onclick = () => $('levelup').classList.remove('on');

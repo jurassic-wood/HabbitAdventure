@@ -122,6 +122,12 @@
   @keyframes pop{from{transform:scale(.3)}to{transform:scale(1)}}
   @keyframes fade{from{opacity:0}}
 
+  .gate{position:fixed;inset:0;background:var(--bg);z-index:50;display:none;align-items:center;justify-content:center;padding:24px}
+  .gate.on{display:flex}
+  .gate .box{width:100%;max-width:380px;text-align:center}
+  .gate img{width:150px;height:150px;object-fit:contain}
+  .gate .err{color:var(--bad);min-height:20px;font-size:14px;margin:10px 0 0}
+  .linkbtn{color:var(--muted);text-decoration:underline;font-size:14px;margin-top:14px;padding:8px}
   .toast{position:fixed;left:50%;top:calc(14px + env(safe-area-inset-top));transform:translate(-50%,-120px);background:var(--text);color:var(--bg);
     font-weight:800;padding:10px 16px;border-radius:99px;z-index:40;transition:transform .3s;white-space:nowrap}
   .toast.on{transform:translate(-50%,0)}
@@ -197,6 +203,12 @@
     <div class="card" id="editList"></div>
     <div style="height:10px"></div>
     <button class="btn" id="addHabit">+ Neue Gewohnheit</button>
+    <h2>Konto &amp; Sync</h2>
+    <div class="card">
+      <div id="syncStatus" class="small">Verbinde …</div>
+      <div style="height:12px"></div>
+      <button class="btn ghost" id="accBtn">Anmelden</button>
+    </div>
     <h2>Daten</h2>
     <div class="card">
       <div class="row">
@@ -244,6 +256,20 @@
   <p class="muted">Tippen zum Weiterspielen</p>
 </div>
 <div class="toast" id="toast"></div>
+<div class="gate" id="gate">
+  <div class="box">
+    <img src="level1.png" alt="">
+    <div class="title">Dino Quest</div>
+    <p class="muted small">Melde dich mit deinem Jurassic-Wood-Konto an. Dann werden deine Daten sicher gespeichert.</p>
+    <label for="gEmail" style="text-align:left">E-Mail</label>
+    <input id="gEmail" type="email" autocomplete="username" inputmode="email">
+    <label for="gPass" style="text-align:left">Passwort</label>
+    <input id="gPass" type="password" autocomplete="current-password">
+    <p class="err" id="gErr" role="alert"></p>
+    <button class="btn" id="gBtn">Anmelden</button>
+    <button class="linkbtn" id="gSkip">Erst mal ohne Anmeldung (nur dieses Gerät)</button>
+  </div>
+</div>
 
 <script>
 /* ---------- Konfiguration ---------- */
@@ -284,7 +310,8 @@ function load(){
   return { habits: DEFAULT_HABITS, log:{}, save:{name:'Erster Spielstand', start:t, end:addDays(t,180)}, hall:[], lastLevel:1 };
 }
 let S = load();
-function persist(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+function persistLocal(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+function persist(){ persistLocal(); if(window.Cloud) Cloud.pushState(); }
 
 let curDay = today();
 let heatHabit = null, heatWeeks = 26;
@@ -361,7 +388,7 @@ function toggle(id, force){
   const val = force !== undefined ? force : !e[id];
   if(val) e[id] = true; else delete e[id];
   if(!Object.keys(e).length) delete S.log[curDay];
-  persist(); renderToday();
+  persist(); if(window.Cloud) Cloud.pushDay(curDay); renderToday();
   if(navigator.vibrate) navigator.vibrate(15);
 }
 
@@ -502,7 +529,7 @@ $('exportBtn').onclick = () => {
 };
 $('importBtn').onclick = () => $('importFile').click();
 $('importFile').onchange = async e => {
-  try{ const d = JSON.parse(await e.target.files[0].text()); if(!d.habits) throw 0; S = d; persist(); renderAll(); toast('Backup geladen ✓'); }
+  try{ const d = JSON.parse(await e.target.files[0].text()); if(!d.habits) throw 0; S = d; persist(); if(window.Cloud) Cloud.uploadAll(); renderAll(); toast('Backup geladen ✓'); }
   catch(err){ toast('Datei konnte nicht gelesen werden'); }
 };
 
@@ -532,13 +559,140 @@ function renderAll(){ renderToday(); renderHeat(); renderSave(); renderHabits();
   const q = new URLSearchParams(location.search), id = q.get('check');
   if(id){
     const h = habitById(id);
-    if(h){ curDay = today(); const e = S.log[curDay] = S.log[curDay] || {}; e[id] = true; persist(); toast(`${h.emoji} ${h.name} abgehakt ✓`); }
+    if(h){ curDay = today(); const e = S.log[curDay] = S.log[curDay] || {}; e[id] = true; persist(); window.pendingDay = curDay; toast(`${h.emoji} ${h.name} abgehakt ✓`); }
     else toast('Unbekannte Gewohnheit: ' + id);
     history.replaceState(null, '', location.pathname);
   }
 })();
 document.addEventListener('visibilitychange', () => { if(!document.hidden){ if(curDay > today()) curDay = today(); renderAll(); } });
+/* ---------- Brücke für den Firebase-Teil ---------- */
+window.HA = {
+  get: () => S, set: x => { S = x; persistLocal(); }, renderAll, toast,
+  status(st, email, err){
+    const g = $('gate'), t = $('syncStatus'), b = $('accBtn');
+    g.classList.toggle('on', st === 'login' && !window.skipLogin);
+    $('gErr').textContent = st === 'login' ? (err || '') : '';
+    $('gBtn').disabled = false;
+    t.innerHTML = st === 'in' ? `☁️ Angemeldet als <b>${esc(email)}</b><br><span class="muted">Alles wird automatisch in Firebase gespeichert.</span>`
+      : st === 'loading' ? 'Verbinde mit Firebase …'
+      : st === 'offline' ? `⚠️ Offline: ${esc(err || 'Firebase nicht erreichbar')}. Daten bleiben vorerst nur auf diesem Gerät.`
+      : '⚠️ Nicht angemeldet. Daten liegen nur auf diesem Gerät.';
+    b.textContent = st === 'in' ? 'Abmelden' : 'Anmelden';
+    b.style.display = st === 'loading' ? 'none' : '';
+  }
+};
+$('gBtn').onclick = async () => {
+  const e = $('gEmail').value.trim(), p = $('gPass').value;
+  if(!e || !p){ $('gErr').textContent = 'Bitte E-Mail und Passwort eingeben.'; return; }
+  if(!window.Cloud){ $('gErr').textContent = 'Firebase lädt noch, kurz warten …'; return; }
+  $('gBtn').disabled = true; $('gErr').textContent = '';
+  try{ await Cloud.login(e, p); }catch(x){ $('gBtn').disabled = false; $('gErr').textContent = Cloud.msg(x && x.code); }
+};
+$('gPass').onkeydown = ev => { if(ev.key === 'Enter') $('gBtn').click(); };
+$('gSkip').onclick = () => { window.skipLogin = true; $('gate').classList.remove('on'); };
+$('accBtn').onclick = () => {
+  if(window.Cloud && Cloud.user){ if(confirm('Abmelden? Deine Daten bleiben in Firebase gespeichert.')) Cloud.logout(); }
+  else { window.skipLogin = false; $('gate').classList.add('on'); }
+};
+HA.status('loading');
 renderAll();
+</script>
+
+<script type="module">
+/* ---------- Firebase (gleiches Projekt wie die Jurassic Wood App, eigener Bereich "habitAdventure") ---------- */
+const CFG = {apiKey:"AIzaSyCHKFHc-dUoUzUnJ01PkcTkHbA9G4K-nxk",authDomain:"jurassicwoodapp.firebaseapp.com",projectId:"jurassicwoodapp",storageBucket:"jurassicwoodapp.firebasestorage.app",messagingSenderId:"1030398262587",appId:"1:1030398262587:web:f664e7a464962f26e3cb1e"};
+const V = '13.4.0', U = m => `https://www.gstatic.com/firebasejs/${V}/firebase-${m}.js`;
+const MSG = {'auth/invalid-credential':'E-Mail oder Passwort stimmt nicht.','auth/wrong-password':'E-Mail oder Passwort stimmt nicht.','auth/user-not-found':'E-Mail oder Passwort stimmt nicht.','auth/invalid-email':'Die E-Mail-Adresse ist ungültig.','auth/too-many-requests':'Zu viele Versuche. Bitte kurz warten.','auth/network-request-failed':'Keine Verbindung. Prüfe dein Internet.','auth/unauthorized-domain':'Diese Adresse ist in Firebase nicht als autorisierte Domain eingetragen.'};
+const msg = c => MSG[c] || 'Anmeldung fehlgeschlagen' + (c ? ` (${c})` : '') + '.';
+const stateOf = S => ({habits:S.habits, save:S.save || null, hall:S.hall || [], lastLevel:S.lastLevel || 1});
+const canon = v => JSON.stringify(v, (k,x) => x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map(q => [q, x[q]])) : x);
+
+let A, AU, FS;
+try{ [A, AU, FS] = await Promise.all([import(U('app')), import(U('auth')), import(U('firestore'))]); }
+catch(e){ HA.status('offline', '', 'Firebase konnte nicht geladen werden'); throw e; }
+
+const app = A.initializeApp(CFG, 'habitAdventure'), auth = AU.getAuth(app);
+let db; try{ db = FS.initializeFirestore(app, {experimentalForceLongPolling:true}); }catch(e){ db = FS.getFirestore(app); }
+
+let uid = null, ready = false, lastState = '', unsubs = [], stTimer = null;
+const stateRef = () => FS.doc(db, 'habitAdventure', uid);
+const dayRef = d => FS.doc(db, 'habitAdventure', uid, 'days', d);
+const fail = e => { console.error(e); HA.toast(e && e.code === 'permission-denied' ? 'Keine Berechtigung (Firestore-Regeln)' : 'Speichern fehlgeschlagen'); };
+
+async function writeDays(dates){
+  const S = HA.get();
+  for(let i = 0; i < dates.length; i += 400){
+    const b = FS.writeBatch(db);
+    dates.slice(i, i + 400).forEach(d => b.set(dayRef(d), S.log[d]));
+    await b.commit();
+  }
+}
+
+const Cloud = window.Cloud = {
+  user: null, msg,
+  login: (e, p) => AU.signInWithEmailAndPassword(auth, e, p),
+  logout: async () => { unsubs.forEach(u => u()); unsubs = []; ready = false; await AU.signOut(auth); },
+  pushDay(d){
+    if(!ready) return;
+    const e = HA.get().log[d];
+    (e && Object.keys(e).length ? FS.setDoc(dayRef(d), e) : FS.deleteDoc(dayRef(d))).catch(fail);
+  },
+  pushState(){
+    if(!ready) return;
+    clearTimeout(stTimer);
+    stTimer = setTimeout(() => {
+      const st = stateOf(HA.get()), c = canon(st);
+      if(c === lastState) return;
+      lastState = c; FS.setDoc(stateRef(), JSON.parse(JSON.stringify(st))).catch(fail);
+    }, 400);
+  },
+  async uploadAll(){
+    if(!ready) return;
+    const S = HA.get(); lastState = '';
+    Cloud.pushState(); await writeDays(Object.keys(S.log)).catch(fail);
+  }
+};
+
+AU.onAuthStateChanged(auth, async u => {
+  unsubs.forEach(f => f()); unsubs = []; ready = false;
+  if(!u){ Cloud.user = null; HA.status('login'); return; }
+  Cloud.user = u; uid = u.uid; HA.status('loading');
+  try{
+    const S = HA.get();
+    const [snap, days] = await Promise.all([FS.getDoc(stateRef()), FS.getDocs(FS.collection(db, 'habitAdventure', uid, 'days'))]);
+    const remoteDates = new Set(days.docs.map(d => d.id));
+    if(!snap.exists()){
+      // Erstes Mal: alles von diesem Gerät hochladen
+      const st = stateOf(S); lastState = canon(st);
+      await FS.setDoc(stateRef(), JSON.parse(JSON.stringify(st)));
+      await writeDays(Object.keys(S.log).filter(d => !remoteDates.has(d)));
+      HA.toast('Daten in Firebase gesichert ☁️');
+    } else {
+      // Tage, die nur auf diesem Gerät liegen, ergänzen
+      const missing = Object.keys(S.log).filter(d => !remoteDates.has(d));
+      if(missing.length) await writeDays(missing);
+    }
+    ready = true;
+    unsubs.push(FS.onSnapshot(stateRef(), s => {
+      if(!s.exists()) return;
+      const d = s.data(), c = canon(stateOf(d));
+      if(c === lastState) return;
+      lastState = c;
+      const S = HA.get(); Object.assign(S, {habits:d.habits || [], save:d.save || null, hall:d.hall || [], lastLevel:d.lastLevel || 1});
+      HA.set(S); HA.renderAll();
+    }, fail));
+    unsubs.push(FS.onSnapshot(FS.collection(db, 'habitAdventure', uid, 'days'), s => {
+      const log = {}; s.forEach(d => { const x = d.data(); if(x && Object.keys(x).length) log[d.id] = x; });
+      const S = HA.get(); if(canon(log) === canon(S.log)) return;
+      S.log = log; HA.set(S); HA.renderAll();
+    }, fail));
+    if(window.pendingDay){ Cloud.pushDay(window.pendingDay); window.pendingDay = null; }
+    HA.status('in', u.email);
+  }catch(e){
+    console.error(e);
+    HA.status('offline', '', e && e.code === 'permission-denied' ? 'Keine Berechtigung, bitte Firestore-Regeln ergänzen' : 'Verbindung fehlgeschlagen' + (e && e.code ? ` (${e.code})` : ''));
+  }
+});
 </script>
 </body>
 </html>
